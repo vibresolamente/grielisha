@@ -413,25 +413,14 @@ const AdminDashboard = () => {
           ))}
         </select>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">Category Type</label>
-        <select
-          name="category_type"
-          value={formData.category_type || ''}
-          onChange={handleInputChange}
-          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent"
-          required
-        >
-          <option value="">Select Type</option>
-          <option value="cleaning_detergents">Cleaning Detergents</option>
-          <option value="cleaning_tools">Cleaning Tools & Machines</option>
-          <option value="stationery">Stationery</option>
-          <option value="art_supplies">Art Supplies</option>
-          <option value="snacks">Snacks</option>
-          <option value="foodstuffs">Foodstuffs</option>
-          <option value="computer_electronics">Computer Electronics</option>
-        </select>
-      </div>
+      <Input
+        label="Category Type"
+        name="category_type"
+        value={formData.category_type || ''}
+        onChange={handleInputChange}
+        placeholder="e.g., cleaning_detergents, cleaning_tools, stationery"
+        required
+      />
       <div>
         <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
         <textarea
