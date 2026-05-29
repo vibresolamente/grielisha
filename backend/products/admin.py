@@ -22,20 +22,25 @@ class ProductAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk:
-            if isinstance(self.instance.features, list):
-                self.initial['features'] = '\n'.join(self.instance.features) if self.instance.features else ''
-            elif isinstance(self.instance.features, str):
-                self.initial['features'] = self.instance.features
-            else:
-                self.initial['features'] = json.dumps(self.instance.features) if self.instance.features else ''
-            
-            if isinstance(self.instance.specifications, dict):
-                lines = [f"{k}: {v}" for k, v in self.instance.specifications.items()]
-                self.initial['specifications'] = '\n'.join(lines) if lines else ''
-            elif isinstance(self.instance.specifications, str):
-                self.initial['specifications'] = self.instance.specifications
-            else:
-                self.initial['specifications'] = json.dumps(self.instance.specifications) if self.instance.specifications else ''
+            try:
+                if isinstance(self.instance.features, list):
+                    self.initial['features'] = '\n'.join(self.instance.features) if self.instance.features else ''
+                elif isinstance(self.instance.features, str):
+                    self.initial['features'] = self.instance.features
+                else:
+                    self.initial['features'] = json.dumps(self.instance.features) if self.instance.features else ''
+                
+                if isinstance(self.instance.specifications, dict):
+                    lines = [f"{k}: {v}" for k, v in self.instance.specifications.items()]
+                    self.initial['specifications'] = '\n'.join(lines) if lines else ''
+                elif isinstance(self.instance.specifications, str):
+                    self.initial['specifications'] = self.instance.specifications
+                else:
+                    self.initial['specifications'] = json.dumps(self.instance.specifications) if self.instance.specifications else ''
+            except (AttributeError, TypeError, ValueError) as e:
+                # Handle any errors gracefully
+                self.initial['features'] = ''
+                self.initial['specifications'] = ''
 
     def clean_features(self):
         data = self.cleaned_data.get('features', '')
