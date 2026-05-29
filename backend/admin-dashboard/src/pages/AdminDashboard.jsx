@@ -23,6 +23,8 @@ const AdminDashboard = () => {
   const [activities, setActivities] = useState([])
   const [users, setUsers] = useState([])
   const [bookings, setBookings] = useState([])
+  const [wishlists, setWishlists] = useState([])
+  const [carts, setCarts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -33,6 +35,7 @@ const AdminDashboard = () => {
   const [formData, setFormData] = useState({})
   const [selectedProductIds, setSelectedProductIds] = useState([])
   const [selectedServiceIds, setSelectedServiceIds] = useState([])
+  const [expandedOrderId, setExpandedOrderId] = useState(null)
 
   useEffect(() => {
     fetchDashboardData()
@@ -53,7 +56,7 @@ const AdminDashboard = () => {
       // Use individual catches so one missing route doesn't crash all data
       const safe = async (fn) => { try { return await fn() } catch { return { data: [] } } }
 
-      const [statsRes, ordersRes, productsRes, servicesRes, paymentsRes, usersRes, bookingsRes] = await Promise.all([
+      const [statsRes, ordersRes, productsRes, servicesRes, paymentsRes, usersRes, bookingsRes, wishlistsRes, cartsRes, activitiesRes] = await Promise.all([
         safe(() => api.get('/products/stats/summary/')),
         safe(() => api.get('/orders/')),
         safe(() => api.get('/products/')),
@@ -61,6 +64,9 @@ const AdminDashboard = () => {
         safe(() => api.get('/orders/payments/admin/')),
         safe(() => api.get('/auth/users/')),
         safe(() => api.get('/bookings/')),
+        safe(() => api.get('/products/wishlists/')),
+        safe(() => api.get('/orders/carts/')),
+        safe(() => api.get('/auth/activity-logs/')),
       ])
 
       setStats(statsRes.data.results || statsRes.data || {})
@@ -70,7 +76,9 @@ const AdminDashboard = () => {
       setPayments(Array.isArray(paymentsRes.data.results ?? paymentsRes.data) ? (paymentsRes.data.results ?? paymentsRes.data) : [])
       setUsers(Array.isArray(usersRes.data.results ?? usersRes.data) ? (usersRes.data.results ?? usersRes.data) : [])
       setBookings(Array.isArray(bookingsRes.data.results ?? bookingsRes.data) ? (bookingsRes.data.results ?? bookingsRes.data) : [])
-      setActivities([]) // activity-log not yet implemented; placeholder
+      setWishlists(Array.isArray(wishlistsRes.data.results ?? wishlistsRes.data) ? (wishlistsRes.data.results ?? wishlistsRes.data) : [])
+      setCarts(Array.isArray(cartsRes.data.results ?? cartsRes.data) ? (cartsRes.data.results ?? cartsRes.data) : [])
+      setActivities(Array.isArray(activitiesRes.data.results ?? activitiesRes.data) ? (activitiesRes.data.results ?? activitiesRes.data) : [])
       setError(null)
     } catch (err) {
       console.error('Dashboard fetch error:', err)
@@ -88,6 +96,15 @@ const AdminDashboard = () => {
       fetchDashboardData()
     } catch (err) {
       alert("Action failed")
+    }
+  }
+
+  const handleUpdateBookingStatus = async (id, status) => {
+    try {
+      await api.patch(`/bookings/${id}/`, { status })
+      fetchDashboardData()
+    } catch (err) {
+      alert("Status update failed")
     }
   }
 
@@ -118,6 +135,9 @@ const AdminDashboard = () => {
     let endpoint = '/products/'
     if (modalType === 'service') endpoint = '/services/'
     if (modalType === 'logistics') endpoint = '/orders/'
+    if (modalType === 'category') endpoint = '/products/categories/'
+    if (modalType === 'user') endpoint = '/auth/users/'
+    if (modalType === 'payment') endpoint = '/orders/payments/'
 
     try {
       if (isEditing) {
@@ -127,6 +147,7 @@ const AdminDashboard = () => {
       }
       setIsModalOpen(false)
       fetchDashboardData()
+      fetchCategories()
     } catch (err) {
       alert('Save failed. Check console.')
       console.error(err)
@@ -135,10 +156,15 @@ const AdminDashboard = () => {
 
   const handleDelete = async (type, id) => {
     if (!window.confirm(`Delete this ${type}? This cannot be undone.`)) return
-    const endpoint = type === 'product' ? '/products/' : '/services/'
+    let endpoint = '/products/'
+    if (type === 'service') endpoint = '/services/'
+    if (type === 'category') endpoint = '/products/categories/'
+    if (type === 'user') endpoint = '/auth/users/'
+    if (type === 'payment') endpoint = '/orders/payments/'
     try {
       await api.delete(`${endpoint}${id}/`)
       fetchDashboardData()
+      fetchCategories()
     } catch (err) {
       alert('Delete failed.')
     }
@@ -179,10 +205,19 @@ const AdminDashboard = () => {
   const PaymentsTab = () => (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h3 className="text-2xl font-bold text-glow uppercase tracking-wider">Payment Verification</h3>
-        <button onClick={fetchDashboardData} className="p-2 border border-white/10 rounded-lg hover:bg-white/5 text-gray-400">
-          <RefreshCw size={20} />
-        </button>
+        <h3 className="text-2xl font-bold text-glow uppercase tracking-wider">Payment Management</h3>
+        <div className="flex space-x-2">
+          <button onClick={fetchDashboardData} className="p-2 border border-white/10 rounded-lg hover:bg-white/5 text-gray-400">
+            <RefreshCw size={20} />
+          </button>
+          <button
+            onClick={() => handleOpenModal('payment')}
+            className="btn-premium flex items-center space-x-2"
+          >
+            <Plus size={20} />
+            <span>Add Payment</span>
+          </button>
+        </div>
       </div>
 
       <div className="glass rounded-xl overflow-hidden">
@@ -191,11 +226,11 @@ const AdminDashboard = () => {
             <thead className="glass-dark">
               <tr>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Method</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Order ID</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Order/Booking</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Code / Ref</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Amount</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Verify</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -209,34 +244,50 @@ const AdminDashboard = () => {
                       <span className="capitalize">{payment.payment_method}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">#{payment.order}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{payment.transaction_code}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                    {payment.order ? `Order #${payment.order}` : payment.booking ? `Booking #${payment.booking}` : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{payment.transaction_code || 'N/A'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-accent font-bold">KES {parseFloat(payment.amount).toLocaleString()}</td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                      payment.status === 'verified' ? 'bg-green-500/20 text-green-400' : 
+                      payment.status === 'verified' ? 'bg-green-500/20 text-green-400' :
                       payment.status === 'rejected' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'
                     }`}>
                       {payment.status}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    {payment.status === 'pending' && (
-                      <div className="flex justify-end space-x-2">
-                        <button 
-                          onClick={() => handleVerifyPayment(payment.id, 'verify')}
-                          className="p-1 px-3 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-all text-xs flex items-center"
-                        >
-                          <Check size={14} className="mr-1" /> Approve
-                        </button>
-                        <button 
-                          onClick={() => handleVerifyPayment(payment.id, 'reject')}
-                          className="p-1 px-3 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all text-xs flex items-center"
-                        >
-                          <X size={14} className="mr-1" /> Reject
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex justify-end space-x-2">
+                      {payment.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => handleVerifyPayment(payment.id, 'verify')}
+                            className="p-1 px-3 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-all text-xs flex items-center"
+                          >
+                            <Check size={14} className="mr-1" /> Approve
+                          </button>
+                          <button
+                            onClick={() => handleVerifyPayment(payment.id, 'reject')}
+                            className="p-1 px-3 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all text-xs flex items-center"
+                          >
+                            <X size={14} className="mr-1" /> Reject
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => handleOpenModal('payment', payment)}
+                        className="p-1 text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete('payment', payment.id)}
+                        className="p-1 text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -253,11 +304,15 @@ const AdminDashboard = () => {
   const tabs = [
     { id: 'overview', label: 'Insights', icon: <TrendingUp size={20} /> },
     { id: 'products', label: 'Inventory', icon: <Package size={20} /> },
+    { id: 'categories', label: 'Categories', icon: <Package size={20} /> },
     { id: 'services', label: 'Eco-Services', icon: <Calendar size={20} /> },
     { id: 'payments', label: 'Payments', icon: <CreditCard size={20} /> },
     { id: 'orders', label: 'Orders History', icon: <ShoppingBag size={20} /> },
     { id: 'bookings', label: 'Bookings', icon: <Calendar size={20} /> },
-    { id: 'users', label: 'Customers', icon: <Users size={20} /> }
+    { id: 'users', label: 'Customers', icon: <Users size={20} /> },
+    { id: 'wishlists', label: 'Wishlists', icon: <Package size={20} /> },
+    { id: 'carts', label: 'Carts', icon: <ShoppingBag size={20} /> },
+    { id: 'activity', label: 'Activity Log', icon: <TrendingUp size={20} /> }
   ]
 
 
@@ -359,6 +414,25 @@ const AdminDashboard = () => {
         </select>
       </div>
       <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Category Type</label>
+        <select
+          name="category_type"
+          value={formData.category_type || ''}
+          onChange={handleInputChange}
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent"
+          required
+        >
+          <option value="">Select Type</option>
+          <option value="cleaning_detergents">Cleaning Detergents</option>
+          <option value="cleaning_tools">Cleaning Tools & Machines</option>
+          <option value="stationery">Stationery</option>
+          <option value="art_supplies">Art Supplies</option>
+          <option value="snacks">Snacks</option>
+          <option value="foodstuffs">Foodstuffs</option>
+          <option value="computer_electronics">Computer Electronics</option>
+        </select>
+      </div>
+      <div>
         <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
         <textarea
           name="description"
@@ -367,6 +441,28 @@ const AdminDashboard = () => {
           rows="3"
           className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent resize-none"
           required
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Features (one per line)</label>
+        <textarea
+          name="features"
+          value={formData.features || ''}
+          onChange={handleInputChange}
+          rows="3"
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent resize-none"
+          placeholder="Feature 1&#10;Feature 2&#10;Feature 3"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Specifications (Key: Value per line)</label>
+        <textarea
+          name="specifications"
+          value={formData.specifications || ''}
+          onChange={handleInputChange}
+          rows="3"
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent resize-none"
+          placeholder="Weight: 5kg&#10;Dimensions: 10x20x30cm&#10;Material: Plastic"
         />
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -384,7 +480,7 @@ const AdminDashboard = () => {
           <input
             type="checkbox"
             name="is_active"
-            checked={formData.is_active || true}
+            checked={formData.is_active !== undefined ? formData.is_active : true}
             onChange={handleInputChange}
             className="w-4 h-4 bg-accent/20 border-white/10 rounded"
           />
@@ -474,6 +570,28 @@ const AdminDashboard = () => {
           required
         />
       </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Features (one per line)</label>
+        <textarea
+          name="features"
+          value={formData.features || ''}
+          onChange={handleInputChange}
+          rows="3"
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent resize-none"
+          placeholder="Feature 1&#10;Feature 2&#10;Feature 3"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Specifications (Key: Value per line)</label>
+        <textarea
+          name="specifications"
+          value={formData.specifications || ''}
+          onChange={handleInputChange}
+          rows="3"
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent resize-none"
+          placeholder="Includes: Equipment&#10;Team Size: 3 people&#10;Area: Up to 500 sq ft"
+        />
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <label className="flex items-center space-x-2 cursor-pointer">
           <input
@@ -506,6 +624,178 @@ const AdminDashboard = () => {
           className="btn-premium"
         >
           {isEditing ? 'Update Service' : 'Create Service'}
+        </button>
+      </ModalFooter>
+    </form>
+  )
+
+  const CategoryForm = () => (
+    <form onSubmit={handleSave} className="space-y-4">
+      <Input
+        label="Category Name"
+        name="name"
+        value={formData.name || ''}
+        onChange={handleInputChange}
+        required
+      />
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+        <textarea
+          name="description"
+          value={formData.description || ''}
+          onChange={handleInputChange}
+          rows="3"
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent resize-none"
+        />
+      </div>
+      <ModalFooter>
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(false)}
+          className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn-premium"
+        >
+          {isEditing ? 'Update Category' : 'Create Category'}
+        </button>
+      </ModalFooter>
+    </form>
+  )
+
+  const UserForm = () => (
+    <form onSubmit={handleSave} className="space-y-4">
+      <Input
+        label="Username"
+        name="username"
+        value={formData.username || ''}
+        onChange={handleInputChange}
+        required
+      />
+      <Input
+        label="Email"
+        name="email"
+        type="email"
+        value={formData.email || ''}
+        onChange={handleInputChange}
+        required
+      />
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Role</label>
+        <select
+          name="role"
+          value={formData.role || 'customer'}
+          onChange={handleInputChange}
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent"
+          required
+        >
+          <option value="customer">Customer</option>
+          <option value="staff">Staff</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <Input
+        label="Phone"
+        name="phone"
+        value={formData.phone || ''}
+        onChange={handleInputChange}
+      />
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Address</label>
+        <textarea
+          name="address"
+          value={formData.address || ''}
+          onChange={handleInputChange}
+          rows="2"
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent resize-none"
+        />
+      </div>
+      <Input
+        label="Loyalty Points"
+        name="loyalty_points"
+        type="number"
+        value={formData.loyalty_points || 0}
+        onChange={handleInputChange}
+      />
+      <ModalFooter>
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(false)}
+          className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn-premium"
+        >
+          Update User
+        </button>
+      </ModalFooter>
+    </form>
+  )
+
+  const PaymentForm = () => (
+    <form onSubmit={handleSave} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Payment Method</label>
+        <select
+          name="payment_method"
+          value={formData.payment_method || ''}
+          onChange={handleInputChange}
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent"
+          required
+        >
+          <option value="">Select Method</option>
+          <option value="mpesa">M-Pesa</option>
+          <option value="bank">Bank Transfer</option>
+          <option value="cash">Cash on Delivery</option>
+        </select>
+      </div>
+      <Input
+        label="Transaction Code"
+        name="transaction_code"
+        value={formData.transaction_code || ''}
+        onChange={handleInputChange}
+      />
+      <Input
+        label="Amount (KES)"
+        name="amount"
+        type="number"
+        value={formData.amount || ''}
+        onChange={handleInputChange}
+        required
+      />
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">Status</label>
+        <select
+          name="status"
+          value={formData.status || 'pending'}
+          onChange={handleInputChange}
+          className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-accent"
+          required
+        >
+          <option value="pending">Pending Verification</option>
+          <option value="verified">Verified</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <ModalFooter>
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(false)}
+          className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn-premium"
+        >
+          {isEditing ? 'Update Payment' : 'Create Payment'}
         </button>
       </ModalFooter>
     </form>
@@ -719,7 +1009,7 @@ const AdminDashboard = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h3 className="text-2xl font-bold text-glow uppercase tracking-wider">Product Inventory</h3>
-        <button 
+        <button
           onClick={() => handleOpenModal('product')}
           className="btn-premium flex items-center space-x-2"
         >
@@ -727,15 +1017,15 @@ const AdminDashboard = () => {
           <span>Add Product</span>
         </button>
       </div>
-      
+
       <div className="glass rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="glass-dark">
               <tr>
                 <th className="px-6 py-4 text-left">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     onChange={() => handleSelectAll('product', products)}
                     checked={selectedProductIds.length === products.length && products.length > 0}
                     className="w-4 h-4 bg-accent/20 border-white/10 rounded"
@@ -753,8 +1043,8 @@ const AdminDashboard = () => {
               {products.map((product) => (
                 <tr key={product.id} className={`hover:bg-white/5 transition-colors ${selectedProductIds.includes(product.id) ? 'bg-accent/5' : ''}`}>
                   <td className="px-6 py-4">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       onChange={() => handleSelectItem('product', product.id)}
                       checked={selectedProductIds.includes(product.id)}
                       className="w-4 h-4 bg-accent/20 border-white/10 rounded"
@@ -782,13 +1072,13 @@ const AdminDashboard = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex justify-end space-x-2">
-                      <button 
+                      <button
                         onClick={() => handleOpenModal('product', product)}
                         className="p-1 text-blue-400 hover:text-blue-300 transition-colors"
                       >
                         <Edit size={16} />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDelete('product', product.id)}
                         className="p-1 text-red-400 hover:text-red-300 transition-colors"
                       >
@@ -803,6 +1093,68 @@ const AdminDashboard = () => {
         </div>
       </div>
       <BulkActionBar type="product" selectedCount={selectedProductIds.length} />
+    </div>
+  )
+
+  const CategoriesTab = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-2xl font-bold text-glow uppercase tracking-wider">Category Management</h3>
+        <button
+          onClick={() => handleOpenModal('category')}
+          className="btn-premium flex items-center space-x-2"
+        >
+          <Plus size={20} />
+          <span>Add Category</span>
+        </button>
+      </div>
+
+      <div className="glass rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="glass-dark">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Category Name</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Description</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Products Count</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Created</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {categories.map((category) => (
+                <tr key={category.id} className="hover:bg-white/5 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-white">{category.name}</div>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-300 max-w-xs truncate">{category.description || 'No description'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{category.products_count || 0}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                    {new Date(category.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <div className="flex justify-end space-x-2">
+                      <button
+                        onClick={() => handleOpenModal('category', category)}
+                        className="p-1 text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete('category', category.id)}
+                        className="p-1 text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {categories.length === 0 && <div className="p-12 text-center text-gray-500">No categories found.</div>}
+        </div>
+      </div>
     </div>
   )
 
@@ -899,43 +1251,66 @@ const AdminDashboard = () => {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Order ID</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Customer</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Date</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Total</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Logistics</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Documents</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {orders.map((order) => (
-                <tr key={order.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">#{order.id}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-white">{order.email || order.user_email || 'N/A'}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                    {new Date(order.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-white">
-                      <span className="text-gray-400 uppercase text-[10px] tracking-wider block mb-1">State: {order.delivery_status}</span>
-                      {order.tracking_number ? <span className="text-accent font-mono text-xs">{order.tracking_number}</span> : <span className="text-gray-500 italic text-xs">No tracking info</span>}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                      order.status === 'paid' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
-                    }`}>
-                      {order.status.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="flex justify-end space-x-2">
-                       <button onClick={() => handleOpenModal('logistics', order)} className="px-2 py-1 bg-accent/20 text-accent rounded text-xs hover:bg-accent hover:text-white transition-colors">Updt Logistics</button>
-                       <a href={`/document/invoice/${order.id}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-white/10 text-white rounded text-xs hover:bg-accent transition-colors">Invoice</a>
-                       <a href={`/document/receipt/${order.id}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-white/10 text-white rounded text-xs hover:bg-accent transition-colors">Receipt</a>
-                       <a href={`/document/delivery-note/${order.id}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-white/10 text-white rounded text-xs hover:bg-accent transition-colors">Delivery Note</a>
-                    </div>
-                  </td>
-                </tr>
+                <React.Fragment key={order.id}>
+                  <tr className="hover:bg-white/5 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">#{order.id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-white">{order.email || order.user_email || 'N/A'}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                      {new Date(order.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-accent font-semibold">
+                      KES {parseFloat(order.total_amount || 0).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-white">
+                        <span className="text-gray-400 uppercase text-[10px] tracking-wider block mb-1">State: {order.delivery_status}</span>
+                        {order.tracking_number ? <span className="text-accent font-mono text-xs">{order.tracking_number}</span> : <span className="text-gray-500 italic text-xs">No tracking info</span>}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                        order.status === 'paid' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+                      }`}>
+                        {order.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="flex justify-end space-x-2">
+                        <button onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)} className="px-2 py-1 bg-white/10 text-white rounded text-xs hover:bg-accent transition-colors">
+                          {expandedOrderId === order.id ? 'Hide Items' : 'View Items'}
+                        </button>
+                        <button onClick={() => handleOpenModal('logistics', order)} className="px-2 py-1 bg-accent/20 text-accent rounded text-xs hover:bg-accent hover:text-white transition-colors">Logistics</button>
+                        <a href={`/document/invoice/${order.id}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-white/10 text-white rounded text-xs hover:bg-accent transition-colors">Invoice</a>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedOrderId === order.id && order.items && (
+                    <tr className="bg-black/20">
+                      <td colSpan="7" className="px-6 py-4">
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-semibold text-accent mb-2">Order Items ({order.items.length})</h4>
+                          {order.items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-sm p-2 bg-white/5 rounded">
+                              <span className="text-white">{item.product_name || item.service_name || 'Item'}</span>
+                              <span className="text-gray-300">Qty: {item.quantity} × KES {parseFloat(item.price || 0).toLocaleString()}</span>
+                              <span className="text-accent font-semibold">KES {parseFloat((item.quantity || 0) * (item.price || 0)).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -960,7 +1335,7 @@ const AdminDashboard = () => {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">User</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Price</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Documents</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -977,14 +1352,28 @@ const AdminDashboard = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                      booking.status === 'confirmed' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
+                      booking.status === 'paid' || booking.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                      booking.status === 'pending' || booking.status === 'pending_payment' ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-red-500/20 text-red-400'
                     }`}>
-                      {booking.status}
+                      {booking.status.replace('_', ' ')}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex justify-end space-x-2">
-                       <a href={`/document/invoice/${booking.id}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-white/10 text-white rounded text-xs hover:bg-accent transition-colors">Invoice</a>
+                      <select
+                        value={booking.status}
+                        onChange={(e) => handleUpdateBookingStatus(booking.id, e.target.value)}
+                        className="bg-black/30 border border-white/10 rounded px-2 py-1 text-xs text-white focus:border-accent focus:outline-none"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="pending_payment">Pending Payment</option>
+                        <option value="paid">Paid/Confirmed</option>
+                        <option value="completed">Completed</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                      <a href={`/document/invoice/${booking.id}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-white/10 text-white rounded text-xs hover:bg-accent transition-colors">Invoice</a>
                     </div>
                   </td>
                 </tr>
@@ -1012,6 +1401,7 @@ const AdminDashboard = () => {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Role</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Loyalty Points</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Joined</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -1037,11 +1427,145 @@ const AdminDashboard = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
                     {new Date(user.created_at).toLocaleDateString()}
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <div className="flex justify-end space-x-2">
+                      <button
+                        onClick={() => handleOpenModal('user', user)}
+                        className="p-1 text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete('user', user.id)}
+                        className="p-1 text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
           {users.length === 0 && <div className="p-12 text-center text-gray-500">No users found.</div>}
+        </div>
+      </div>
+    </div>
+  )
+
+  const WishlistsTab = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-2xl font-bold text-glow uppercase tracking-wider">Customer Wishlists</h3>
+      </div>
+      <div className="glass rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="glass-dark">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">User</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Products</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Services</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Last Updated</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {wishlists.map((wishlist) => (
+                <tr key={wishlist.id} className="hover:bg-white/5 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{wishlist.user_email || 'User'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{wishlist.products_count || 0}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{wishlist.services_count || 0}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                    {new Date(wishlist.updated_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {wishlists.length === 0 && <div className="p-12 text-center text-gray-500">No wishlists found.</div>}
+        </div>
+      </div>
+    </div>
+  )
+
+  const CartsTab = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-2xl font-bold text-glow uppercase tracking-wider">Active Shopping Carts</h3>
+      </div>
+      <div className="glass rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="glass-dark">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">User</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Items</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Amount</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Last Updated</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {carts.map((cart) => (
+                <tr key={cart.id} className="hover:bg-white/5 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{cart.user_email || 'User'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{cart.item_count || 0}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-accent font-semibold">
+                    KES {parseFloat(cart.total_amount || 0).toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                    {new Date(cart.updated_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {carts.length === 0 && <div className="p-12 text-center text-gray-500">No active carts found.</div>}
+        </div>
+      </div>
+    </div>
+  )
+
+  const ActivityTab = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-2xl font-bold text-glow uppercase tracking-wider">Activity Log</h3>
+      </div>
+      <div className="glass rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="glass-dark">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">User</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Action</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Description</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">IP Address</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Timestamp</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {activities.map((activity) => (
+                <tr key={activity.id} className="hover:bg-white/5 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{activity.user_email || 'User'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                      activity.action === 'login' ? 'bg-blue-500/20 text-blue-400' :
+                      activity.action === 'purchase' ? 'bg-green-500/20 text-green-400' :
+                      activity.action === 'admin_action' ? 'bg-accent/20 text-accent' :
+                      'bg-yellow-500/20 text-yellow-400'
+                    }`}>
+                      {activity.action}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-300 max-w-md truncate">{activity.description}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono">{activity.ip_address || 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                    {new Date(activity.timestamp).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {activities.length === 0 && <div className="p-12 text-center text-gray-500">No activity recorded yet.</div>}
         </div>
       </div>
     </div>
@@ -1068,23 +1592,33 @@ const AdminDashboard = () => {
         >
           {activeTab === 'overview' && OverviewTab()}
           {activeTab === 'products' && ProductsTab()}
+          {activeTab === 'categories' && CategoriesTab()}
           {activeTab === 'services' && ServicesTab()}
           {activeTab === 'payments' && PaymentsTab()}
           {activeTab === 'orders' && OrdersTab()}
           {activeTab === 'bookings' && BookingsTab()}
           {activeTab === 'users' && UsersTab()}
+          {activeTab === 'wishlists' && WishlistsTab()}
+          {activeTab === 'carts' && CartsTab()}
+          {activeTab === 'activity' && ActivityTab()}
         </motion.div>
 
         {/* CRUD MODAL */}
         <Modal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title={modalType === 'logistics' ? 'Update Order Logistics' : (isEditing ? `Edit ${modalType === 'product' ? 'Product' : 'Service'}` : `Add New ${modalType === 'product' ? 'Product' : 'Service'}`)}
+          title={modalType === 'logistics' ? 'Update Order Logistics' :
+                 modalType === 'category' ? (isEditing ? 'Edit Category' : 'Add New Category') :
+                 modalType === 'user' ? (isEditing ? 'Edit User' : 'Edit User') :
+                 (isEditing ? `Edit ${modalType === 'product' ? 'Product' : 'Service'}` : `Add New ${modalType === 'product' ? 'Product' : 'Service'}`)}
           size="medium"
         >
           <ModalBody>
             {modalType === 'product' && ProductForm()}
             {modalType === 'service' && ServiceForm()}
+            {modalType === 'category' && CategoryForm()}
+            {modalType === 'user' && UserForm()}
+            {modalType === 'payment' && PaymentForm()}
             {modalType === 'logistics' && LogisticsForm()}
           </ModalBody>
         </Modal>
