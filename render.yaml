@@ -8,6 +8,7 @@ services:
   - type: web
     name: grielisha-backend
     env: python
+    runtime: "3.12"
     rootDir: backend
     buildCommand: "./build.sh"
     startCommand: "gunicorn grielisha.wsgi:application"
