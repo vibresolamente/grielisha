@@ -59,7 +59,7 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     const newErrors = validateForm()
-    
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
@@ -70,9 +70,18 @@ const Login = () => {
 
     try {
       const result = await login(formData.email, formData.password)
-      
+
       if (!result.success) {
-        setErrors({ general: result.error })
+        if (typeof result.error === 'object') {
+          // Handle Django REST framework error format
+          if (result.error.non_field_errors) {
+            setErrors({ general: result.error.non_field_errors[0] })
+          } else {
+            setErrors({ general: result.error.detail || result.error.error || 'Login failed' })
+          }
+        } else {
+          setErrors({ general: result.error })
+        }
       }
     } catch (error) {
       setErrors({ general: 'An unexpected error occurred' })
@@ -156,6 +165,7 @@ const Login = () => {
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
+                  autoComplete="current-password"
                   className={`w-full pl-10 pr-12 py-3 bg-black/30 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-accent transition-colors ${
                     errors.password ? 'border-red-500' : 'border-white/10'
                   }`}

@@ -75,7 +75,7 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     const newErrors = validateForm()
-    
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
@@ -86,10 +86,15 @@ const Register = () => {
 
     try {
       const result = await register(formData)
-      
+
       if (!result.success) {
         if (typeof result.error === 'object') {
-          setErrors(result.error)
+          // Handle Django REST framework error format
+          if (result.error.non_field_errors) {
+            setErrors({ general: result.error.non_field_errors[0] })
+          } else {
+            setErrors(result.error)
+          }
         } else {
           setErrors({ general: result.error })
         }
@@ -235,6 +240,7 @@ const Register = () => {
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
+                  autoComplete="new-password"
                   className={`w-full pl-10 pr-12 py-3 bg-black/30 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-accent transition-colors ${
                     errors.password ? 'border-red-500' : 'border-white/10'
                   }`}
@@ -265,6 +271,7 @@ const Register = () => {
                   name="password_confirm"
                   value={formData.password_confirm}
                   onChange={handleChange}
+                  autoComplete="new-password"
                   className={`w-full pl-10 pr-12 py-3 bg-black/30 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-accent transition-colors ${
                     errors.password_confirm ? 'border-red-500' : 'border-white/10'
                   }`}
