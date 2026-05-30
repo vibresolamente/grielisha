@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-gray-800;
+  }
+  
+  body {
+    @apply bg-[#0a0a0c] text-white font-sans selection:bg-accent/30;
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-[#121217] border border-[#222] shadow-sm;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .glass-dark {
+    @apply bg-[#0a0a0c] border border-[#222] shadow-md;
+  }
+  
+  .neon-glow {
+    @apply shadow-none;
+  }
+  
+  .neon-glow-accent {
+    @apply shadow-none;
+  }
+  
+  .text-glow {
+    @apply text-white font-semibold;
+  }
+  
+  .text-glow-accent {
+    @apply text-accent font-semibold;
+  }
+
+  .btn-premium {
+    @apply px-6 py-2 rounded-md font-medium transition-all duration-200 active:scale-95 bg-accent text-white border border-transparent;
+  }
+
+  .btn-premium:hover {
+    @apply bg-opacity-80 border-accent;
+  }
+
+  .card-pulse:hover {
+    animation: none;
+  }
+}
+
+.bg-mesh {
+  background: #0a0a0c;
+}
